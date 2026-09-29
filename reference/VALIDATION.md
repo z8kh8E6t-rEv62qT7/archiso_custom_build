@@ -17,7 +17,7 @@
 - 保留原工程迁移前的完整配置，包括后来添加的 `openai-codex`；迁移后包清单共 145 项。
 - 原 `profile/` 的文件内容、符号链接和权限均完整迁移；额外保留上游未使用的 `packages.aarch64` 和 `bootstrap_packages`，以减少后续合并冲突。当前 profile 仍明确指定 x86_64、ISO-only。
 - 构建和检查入口已改为使用 `configs/releng/`；原始包快照保留历史内容，不用迁移时的宿主重新导出。
-- 官方历史保留，定制分支为 `codex/custom-live`，只在本地提交，未推送。
+- 官方历史保留；迁移时使用 `codex/custom-live` 临时分支，后按用户要求将提交移至 `master` 并删除临时分支。
 - 迁移后的 `./check.sh`、`./build.sh --check` 均通过；验证时宿主已提供 Archiso 91-1。
 - 新增入口通过 ShellCheck；因宿主没有 make，直接运行 Makefile check 目标同一组脚本的 ShellCheck 检查，通过。
 - 本次未运行构建，未生成 work/ 或 out/。

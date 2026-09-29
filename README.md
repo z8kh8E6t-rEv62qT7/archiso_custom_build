@@ -97,13 +97,13 @@ QEMU 普通显示设备测试不能代替实体 NVIDIA 显卡测试；还需在�
 ## Git 分支与上游同步
 
 本目录由 `git clone --origin upstream https://github.com/archlinux/archiso.git` 创建，保留完整官方历史。
-当前定制分支为 `codex/custom-live`；官方模板的修改直接位于 `configs/releng/`，因此 Git 可以按共同祖先合并。
+当前定制分支为 `master`；官方模板的修改直接位于 `configs/releng/`，因此 Git 可以按共同祖先合并。
 上游工具源码、`configs/baseline/` 以及 `README.rst` 仍保留。releng 的 `packages.aarch64` 与 `bootstrap_packages` 也保留供上游同步，但本工程的 x86_64 ISO 构建不使用它们。原独立骨架 `/mnt/sdc2/archlive/` 留作备份；之后在本目录继续编辑。
 
 开始同步前，先提交本地包清单和配置修改，确保 `git status --short` 没有输出。然后执行：
 
 ```bash
-git switch codex/custom-live
+git switch master
 git fetch upstream --tags
 git merge upstream/master
 ./check.sh
@@ -119,12 +119,15 @@ Git 能合并文本，不会判断上游新增包是否适合你的镜像，也�
 合并新 Archiso 版本后，核对工具与模板变化，更新 `reference/source.json` 中的版本、提交和归档记录，再运行检查和构建／启动验证。
 当前构建入口使用宿主安装的 `mkarchiso`，并不直接运行仓库内的开发版本；其版本需与审核后的模板匹配。
 
-本地克隆不等于已经创建 GitHub Fork。要推送到自己的 GitHub 仓库，可以在 GitHub 创建官方仓库的 Fork，或创建空仓库，然后配置自己的远程：
+自定义仓库远程 `origin` 已配置为：
 
-```bash
-git remote add origin https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git
-git push -u origin codex/custom-live
+```text
+git@github.com:z8kh8E6t-rEv62qT7/archiso_custom_build.git
 ```
 
-将自己仓库的默认分支设为 `codex/custom-live`，便于直接看到定制内容。
-`upstream` 始终用于获取官方更新，`origin` 指向你自己的仓库；本次没有创建远程仓库或推送。
+`master` 保存定制内容并跟踪 `origin/master`；本地临时分支已删除。
+`upstream` 保留官方仓库地址，用于获取和合并官方更新。后续提交自己的修改后，执行：
+
+```bash
+git push origin master
+```
