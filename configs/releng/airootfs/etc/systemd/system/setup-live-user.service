@@ -1,0 +1,11 @@
+[Unit]
+Description=Initialize the Live desktop user
+Before=sddm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/setup-live-user
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

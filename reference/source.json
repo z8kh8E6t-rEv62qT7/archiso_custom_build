@@ -1,0 +1,11 @@
+{
+  "upstream": "https://github.com/archlinux/archiso",
+  "tag": "v91",
+  "commit": "723da192226e1c9d5def9168f13332793c82a85e",
+  "archive_url": "https://api.github.com/repos/archlinux/archiso/tarball/723da192226e1c9d5def9168f13332793c82a85e",
+  "archive_sha256": "84dda0b405b3245370fd81a67d49e72be7714a2f3cffdbdbcf4faa8c2bda48a2",
+  "archiso_major": 91,
+  "snapshot_time_utc": "2026-09-29T22:29:52Z",
+  "package_source": "pacman -Qqe; version snapshots are informational, not a lockfile",
+  "validation": "Not built or boot tested"
+}

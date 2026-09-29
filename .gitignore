@@ -14,3 +14,7 @@ user-data
 meta-data
 network-config
 man/version.rst
+
+# Custom profile checker
+__pycache__/
+*.pyc
