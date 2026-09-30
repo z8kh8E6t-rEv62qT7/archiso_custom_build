@@ -13,8 +13,15 @@ kernel_params_x86_64="nvidia_drm.modeset=1"
 bootmodes=('bios.syslinux'
            'uefi.systemd-boot')
 pacman_conf="pacman.conf"
-airootfs_image_type="squashfs"
-airootfs_image_tool_options=('-comp' 'xz' '-Xbcj' 'x86' '-b' '1M' '-Xdict-size' '1M')
+airootfs_image_type="erofs"
+# Extreme LZMA, 1 MiB physical clusters and packed tails with parallel fragment deduplication.
+# Do not add global dedupe: erofs-utils 1.9.4 would fall back to serial compression.
+airootfs_image_tool_options=(
+  '-zlzma,109'
+  '-C1048576'
+  '-Efragments,ztailpacking,fragdedupe=inode'
+  '--workers=16'
+)
 file_permissions=(
   ["/usr/local/bin/setup-live-user"]="0:0:755"
   ["/etc/sudoers.d/10-liveuser"]="0:0:440"

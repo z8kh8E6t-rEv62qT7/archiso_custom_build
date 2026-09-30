@@ -68,7 +68,11 @@ def check_profile():
     duplicate = sorted(p for p, count in Counter(packages).items() if count > 1)
     require(not duplicate, f"包清单有重复项：{', '.join(duplicate)}")
     pkgs = set(packages)
-    required = {"base", "linux", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux"}
+    if "grml-zsh-config" in pkgs:
+        zshrc = AIROOT / "etc/skel/.zshrc"
+        require(not zshrc.exists() and not zshrc.is_symlink(),
+                "etc/skel/.zshrc 由 grml-zsh-config 提供，预放入会导致文件冲突；请用 etc/skel/.zshrc.local 定制")
+    required = {"base", "linux", "linux-lts", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux"}
     require(required <= pkgs, f"缺少本工程启动必需包：{', '.join(sorted(required - pkgs))}")
     values = profile_values()
     require(len(values) == 10, "profiledef.sh 未返回完整配置")
@@ -79,20 +83,25 @@ def check_profile():
         require(bool(re.fullmatch(r"[A-Z0-9_]{1,32}", label)), "iso_label 应为最多 32 位大写字母、数字或下划线")
         require(bool(re.fullmatch(r"[a-z0-9]{1,30}", install)), "install_dir 格式不合法")
         require(pacman == "pacman.conf" and (PROFILE / pacman).is_file(), "本工程需要 configs/releng/pacman.conf")
-        require(fs == "squashfs", "本工程构建依赖检查针对 squashfs")
+        require(fs == "erofs", "本工程构建依赖检查针对 EROFS")
         require(set(modes.split()) == {"bios.syslinux", "uefi.systemd-boot"}, "应保留 BIOS 和 UEFI 启动模式")
         require(builds == "iso", "本工程仅构建 ISO")
         require(user_mode == "0:0:755", "setup-live-user 的 file_permissions 应为 0:0:755")
         require(sudo_mode == "0:0:440", "sudoers 的 file_permissions 应为 0:0:440")
     for path in ("syslinux/syslinux.cfg", "syslinux/archiso_sys-linux.cfg",
-                 "efiboot/loader/loader.conf", "efiboot/loader/entries/01-archiso-linux.conf"):
+                 "efiboot/loader/loader.conf", "efiboot/loader/entries/01-archiso-linux.conf",
+                 "efiboot/loader/entries/02-archiso-copytoram-linux.conf",
+                 "efiboot/loader/entries/04-archiso-linux-lts.conf",
+                 "efiboot/loader/entries/05-archiso-copytoram-linux-lts.conf",
+                 "efiboot/loader/entries/06-archiso-speech-linux-lts.conf"):
         require((PROFILE / path).is_file(), f"缺少启动配置：{path}")
     init = read(AIROOT / "etc/mkinitcpio.conf.d/archiso.conf")
     require(bool(re.search(r"\barchiso\b", init)) and "filesystems" in init, "initramfs 必须保留 archiso 和 filesystems hooks")
-    nvidia = {"nvidia-open", "nvidia-utils"}
+    require(bool(re.search(r"^MODULES=.*\berofs\b", init, re.M)), "EROFS 镜像需要在 initramfs MODULES 中保留 erofs")
+    nvidia = {"nvidia-open", "nvidia-open-lts", "nvidia-utils"}
     has_modules = bool(re.search(r"^MODULES=.*\bnvidia\b", init, re.M))
     has_nvidia_params = "nvidia_drm.modeset=1" in read(PROFILE / "profiledef.sh")
-    require(not (pkgs & nvidia) or nvidia <= pkgs, "NVIDIA 配置需要同时包含 nvidia-open 和 nvidia-utils")
+    require(not (pkgs & nvidia) or nvidia <= pkgs, "双内核 NVIDIA 配置需要同时包含 nvidia-open、nvidia-open-lts 和 nvidia-utils")
     require(has_modules == (nvidia <= pkgs), "NVIDIA 包与 MODULES 不一致：删除驱动时同步移除 NVIDIA MODULES 和启动参数")
     require(has_nvidia_params == (nvidia <= pkgs), "NVIDIA 启动参数与包清单不一致")
     if nvidia <= pkgs:
@@ -136,10 +145,14 @@ def check_profile():
 
 def check_host():
     require(os.uname().machine == "x86_64", "请在 x86_64 Arch Linux 宿主上构建")
-    commands = ("mkarchiso", "pacman", "pacstrap", "mkinitcpio", "mksquashfs", "xorriso",
-                "mkfs.fat", "mcopy", "mmd", "bsdtar", "unshare", "mount", "tee", "mktemp")
+    commands = ("mkarchiso", "pacman", "pacman-conf", "pacstrap", "mkinitcpio", "mkfs.erofs", "xorriso",
+                "mkfs.fat", "mcopy", "mmd", "bsdtar", "unshare", "mount", "script", "mktemp")
     missing = [name for name in commands if shutil.which(name) is None]
     require(not missing, f"缺少构建工具：{', '.join(missing)}。参见 README.md 的宿主准备命令")
+    if shutil.which("mkfs.erofs"):
+        result = subprocess.run(["mkfs.erofs", "--help"], capture_output=True, text=True)
+        require(result.returncode == 0 and bool(re.search(r"\blzma\b", result.stdout + result.stderr)),
+                "mkfs.erofs 必须支持 LZMA 压缩；请安装启用 LZMA 的 erofs-utils")
     if shutil.which("pacman"):
         result = subprocess.run(["pacman", "-Q", "archiso"], capture_output=True, text=True)
         require(result.returncode == 0, "未安装 Archiso；模板来源为 v91")
@@ -164,7 +177,7 @@ def main():
         for message in errors:
             print(f"错误：{message}", file=sys.stderr)
         return 1
-    print("检查通过。尚未构建／启动验证。")
+    print("检查通过。本次仅检查配置，不代表 ISO 构建或启动验证。")
     return 0
 
 

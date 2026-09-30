@@ -1,7 +1,7 @@
 # 自定义 Arch Linux Live ISO
 
 基于官方 Git 历史的可编辑 Archiso 工程，参照当前 `archlinux-kde-nvidia` Live 环境。
-**尚未构建／启动验证**。当前仅完成配置、构建入口和静态检查，没有下载镜像所需的整套软件包。
+当前固定使用 **EROFS + LZMA extreme 109、片段去重、16 线程压缩**。2026-09-30 已成功构建，ISO 为 3,180,363,776 字节（3033.03 MiB）；相比此前的 SquashFS + XZ 版本减少约 29.34 MiB（0.96%）。尚未启动验证。
 
 ## 工程入口
 
@@ -15,7 +15,7 @@
 | `configs/releng/grub/` | 官方模板附带的 GRUB loopback 配置 |
 | `check.sh`、`build.sh` | 检查入口、构建入口 |
 | `reference/` | 模板来源、官方说明和两个环境的包快照 |
-| `work/`、`out/` | 实际构建时才创建；分别保存工作数据和 ISO／日志 |
+| `work/`、`out/` | 实际构建时才创建；分别保存共享软件包缓存／工作数据和 ISO／日志 |
 
 定制初始基线为官方 [Archiso v91](https://github.com/archlinux/archiso/tree/v91/configs/releng)，提交
 `723da192226e1c9d5def9168f13332793c82a85e`。来源及下载归档的 SHA-256 记录在
@@ -24,15 +24,20 @@
 
 ## 当前行为
 
-- x86_64、Linux 内核、BIOS Syslinux 与 UEFI systemd-boot 启动，根文件系统使用 squashfs。
+- x86_64、`linux` 与 `linux-lts` 双内核、BIOS Syslinux 与 UEFI systemd-boot 启动，根文件系统使用 EROFS + LZMA。
+- BIOS、UEFI 及 GRUB loopback 菜单明确提供 `Normal`（普通启动，`copytoram=n`）和 `Copy to RAM`（复制到内存，`copytoram=y`）两个入口，两套内核各自提供普通、Copy to RAM 和语音辅助启动项。默认使用 `linux` 普通启动，15 秒后自动进入；语音辅助入口也使用普通模式。普通模式需保持启动介质连接，复制到内存模式需额外内存存放压缩根文件系统。菜单修改需重新构建 ISO 才能生效。
+- 所有 Live 启动入口设置 `cow_spacesize=4G`，将内存可写层上限设为 4 GiB，按实际写入占用内存；Copy to RAM 存放压缩根文件系统所用内存另计。
+- 根文件系统采用 LZMA extreme 级别 109、1 MiB 物理压缩簇、文件尾部打包，以及 `fragdedupe=inode` 片段去重，使用 `--workers=16` 并行压缩。片段去重在文件数据完全相同时复用其 fragment 数据；不启用会让 erofs-utils 1.9.4 退回串行的全局 `dedupe`。
+- initramfs 显式包含 `erofs` 内核模块；initramfs 自身继续使用 XZ 压缩。`squashfs-tools` 作为 Live 救援工具保留，不再用于生成根文件系统。
 - KDE Plasma，SDDM 自动登录 `liveuser`，zsh，`liveuser` 免密 sudo。
+- KDE 在接通电源、电池供电和低电量模式下均关闭空闲自动睡眠；通过 `/etc/skel/.config/powerdevilrc` 初始化 Live 用户设置，logind 同时设置 `IdleAction=ignore`。
 - `setup-live-user.service` 创建 UID 1000 用户、从镜像 `/etc/skel` 初始化其家目录，并设为空密码；SDDM 通过 `Requires` 和 `After` 等待它成功。
 - 英文 `C.UTF-8`、美式键盘、UTC，主机名 `archlive`。
 - NetworkManager 使用 wpa_supplicant 管理 Wi-Fi，通过 systemd-resolved 解析 DNS。屏蔽 systemd-networkd 及其 socket，取消模板的 iwd 自启动。
-- `nvidia-open`、`nvidia-utils` 与 NVIDIA initramfs 模块、DRM modeset 参数保持配套。
+- `nvidia-open`、`nvidia-open-lts`、`nvidia-utils` 与 NVIDIA initramfs 模块、DRM modeset 参数保持配套。
 - 保留 releng 安装／救援工具及服务，包括 SSH、cloud-init 和虚拟机来宾服务；这仍是临时 Live 环境。
 
-只移植了原镜像的 zsh 默认配置及美式 KDE 键盘配置；没有复制当前 `/home/liveuser`、账号令牌、Wi-Fi 连接或运行时状态。原有 `/mnt/sdc2/install.sh` 不参与本工程。
+zsh 默认配置由 `grml-zsh-config` 软件包提供，与原镜像一致；工程移植了美式 KDE 键盘配置，没有复制当前 `/home/liveuser`、账号令牌、Wi-Fi 连接或运行时状态。原有 `/mnt/sdc2/install.sh` 不参与本工程。
 
 ## 增删包
 
@@ -54,6 +59,7 @@ AUR、本地包仓库、持久化存储和额外安装器尚未配置。已有�
 ## 添加文件和修改镜像名称
 
 把目标路径放在 `configs/releng/airootfs/` 下，例如 `configs/releng/airootfs/etc/skel/.config/` 为新用户提供默认设置。
+定制 zsh 请使用 `configs/releng/airootfs/etc/skel/.zshrc.local`。不要预放入 `.zshrc`：该文件由 `grml-zsh-config` 安装，重复提供会让 pacman 报文件冲突。
 不要复制整套宿主 `/etc` 或家目录。Archiso 默认将覆盖文件设为 root 所有、普通文件 0644、目录 0755；可执行脚本和 sudoers 等特殊权限必须登记到 `configs/releng/profiledef.sh` 的 `file_permissions`。
 
 在 `profiledef.sh` 修改 `iso_name`、`iso_label`、`iso_publisher` 和 `iso_application`。
@@ -74,10 +80,11 @@ cd /mnt/sdc2/archiso
 实际构建前，在 x86_64 Arch Linux 宿主准备依赖（**本次未执行**）：
 
 ```bash
-sudo pacman -Syu --needed archiso python
+sudo pacman -Syu --needed archiso python erofs-utils
 ```
 
 这会升级宿主并安装 Archiso 及其构建依赖。请确保宿主 `/etc/pacman.d/mirrorlist` 有启用的 HTTPS `Server`、网络可用，且 keyring 有效。构建检查要求 Archiso **91 系列**；若仓库提供更新版本，先审核对应 releng 和命令行兼容性，再更新 `reference/source.json` 的版本记录与检查规则，不要盲目降级宿主依赖。
+EROFS 构建需要宿主的 `mkfs.erofs` 支持 LZMA；`./build.sh --check` 会检查此能力。镜像启动通过内核读取 EROFS，不要求 Live 系统安装 `erofs-utils`。
 
 ```bash
 ./build.sh --check   # 检查配置、宿主工具和 Archiso 版本；普通用户可运行
@@ -86,6 +93,11 @@ sudo ./build.sh     # 只有此命令开始下载软件包并构建 ISO
 
 每次构建创建独立的 `work/build-时间-随机后缀/` 和对应 `out/build-时间-随机后缀/`，后者保存 ISO 与 `build.log`。
 这样包清单修改后不会复用旧 rootfs，也不会覆盖同一天的 ISO。构建失败会返回非零状态并保留日志和工作目录，便于排查。
+构建入口使用 util-linux 的 `script` 保留终端，让 pacman 显示下载进度，同时实时保存 `build.log` 并传递构建退出状态。日志包含终端进度刷新控制字符，可用 `less -R` 查看。
+
+下载的软件包统一缓存到工程内的 `work/cache/pacman/pkg/`，每次构建共用；版本相同且缓存有效时无需重新下载，新增或升级的包仍需下载。脚本按工程的实际路径生成每次构建的 `build.pacman.conf`，通过 `mkarchiso -C` 指定缓存位置，不修改宿主配置。缓存位于 rootfs 外，不会打进 ISO，也不会在构建结束时自动清理。`work/` 已被 Git 忽略。
+
+每次构建仍重新安装 rootfs、生成 initramfs 和压缩镜像；下载缓存不等于增量构建。清理某个 `work/build-*` 目录不会影响共享缓存；删除整个 `work/` 会同时删除缓存。按当前包清单，首轮软件包缓存约需 2.4 GB，保留多个版本时会继续增长。
 脚本不会安装宿主依赖、重新导出包清单、删除旧目录或自动重试。工作目录较大；清理前确认构建已退出且没有残留挂载，再手动处理明确不需要的目录。工程所在分区需要可写，构建过程需要 root 和挂载能力；受限沙箱内仅执行检查。
 
 ## 后续启动验收
