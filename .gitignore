@@ -3,6 +3,7 @@
 *.tar.*
 work/
 out/
+/localrepo/
 codesigning*
 *.iso
 *.img
@@ -18,3 +19,7 @@ man/version.rst
 # Custom profile checker
 __pycache__/
 *.pyc
+
+# Proprietary IP geolocation databases: local ISO assets only, never upload.
+/configs/releng/airootfs/usr/local/lib/ipiptimezone/v4.ipdb
+/configs/releng/airootfs/usr/local/lib/ipiptimezone/v6.ipdb

@@ -53,8 +53,10 @@ printf '%s\0' "$arch" "$iso_name" "$iso_label" "$install_dir" "$pacman_conf" \
 
 
 def check_profile():
-    for script in (ROOT / "check.sh", ROOT / "build.sh", PROFILE / "profiledef.sh",
-                   AIROOT / "usr/local/bin/setup-live-user"):
+    for script in (ROOT / "check.sh", ROOT / "build.sh", ROOT / "build-aur.sh", PROFILE / "profiledef.sh",
+                   AIROOT / "usr/local/bin/setup-live-user",
+                   AIROOT / "usr/local/bin/setup-live-timezone",
+                   AIROOT / "etc/NetworkManager/dispatcher.d/90-live-timezone"):
         result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
         require(result.returncode == 0, f"Shell 语法错误：{script.name}：{result.stderr.strip()}")
         require(os.access(script, os.X_OK), f"缺少可执行权限：{script.relative_to(ROOT)}")
@@ -68,6 +70,22 @@ def check_profile():
     duplicate = sorted(p for p, count in Counter(packages).items() if count > 1)
     require(not duplicate, f"包清单有重复项：{', '.join(duplicate)}")
     pkgs = set(packages)
+    require({"curl", "libgcc", "libstdc++", "tzdata"} <= pkgs,
+            "ipiptimezone 需要 curl、libgcc、libstdc++ 和 tzdata")
+    for name in ("ipiptimezone", "v4.ipdb", "v6.ipdb"):
+        asset = AIROOT / "usr/local/lib/ipiptimezone" / name
+        require(asset.is_file() and not asset.is_symlink() and asset.stat().st_size > 0,
+                f"缺少内置时区资产（应为实际文件）：{name}")
+    require(target(AIROOT / "usr/local/bin/ipiptimezone") == "../lib/ipiptimezone/ipiptimezone",
+            "ipiptimezone 命令链接缺失")
+    require(target(SYSTEM / "timers.target.wants/live-timezone.timer") == "../live-timezone.timer",
+            "时区重试定时器未启用")
+    for executable in ("/usr/local/lib/ipiptimezone/ipiptimezone", "/usr/local/bin/setup-live-timezone",
+                       "/etc/NetworkManager/dispatcher.d/90-live-timezone"):
+        result = subprocess.run(["bash", "-c", 'declare -A file_permissions=(); source "$1"; '
+                                 '[[ ${file_permissions[$2]:-} == 0:0:755 ]]',
+                                 "bash", str(PROFILE / "profiledef.sh"), executable])
+        require(result.returncode == 0, f"镜像内可执行文件权限应为 0:0:755：{executable}")
     if "grml-zsh-config" in pkgs:
         zshrc = AIROOT / "etc/skel/.zshrc"
         require(not zshrc.exists() and not zshrc.is_symlink(),
@@ -98,6 +116,10 @@ def check_profile():
     init = read(AIROOT / "etc/mkinitcpio.conf.d/archiso.conf")
     require(bool(re.search(r"\barchiso\b", init)) and "filesystems" in init, "initramfs 必须保留 archiso 和 filesystems hooks")
     require(bool(re.search(r"^MODULES=.*\berofs\b", init, re.M)), "EROFS 镜像需要在 initramfs MODULES 中保留 erofs")
+    require(all(re.search(rf"^MODULES=.*\b{module}\b", init, re.M)
+                for module in ("thunderbolt", "thunderbolt_net")),
+            "雷电支持需要在 initramfs MODULES 中保留 thunderbolt 和 thunderbolt_net")
+    require("bolt" in pkgs, "雷电设备授权需要 bolt")
     nvidia = {"nvidia-open", "nvidia-open-lts", "nvidia-utils"}
     has_modules = bool(re.search(r"^MODULES=.*\bnvidia\b", init, re.M))
     has_nvidia_params = "nvidia_drm.modeset=1" in read(PROFILE / "profiledef.sh")
@@ -138,7 +160,20 @@ def check_profile():
             require((link.parent / destination).exists(), f"失效相对链接：{link.relative_to(PROFILE)}")
     repositories = set(re.findall(r"^\[([^\]]+)\]", read(PROFILE / "pacman.conf"), re.M)) - {"options"}
     require(repositories == {"core", "extra"}, "默认仓库应仅包含 core 和 extra；增加仓库时请同步调整检查规则")
-    require("LANG=C.UTF-8" in read(AIROOT / "etc/locale.conf"), "语言配置应为 C.UTF-8")
+    require(read(AIROOT / "etc/locale.conf").strip() == "LANG=zh_CN.UTF-8", "默认语言应为 zh_CN.UTF-8，不全局设置 LC_ALL")
+    locales = set(read(AIROOT / "etc/locale.gen").splitlines())
+    require({"zh_CN.UTF-8 UTF-8", "en_US.UTF-8 UTF-8"} <= locales, "必须生成中英文 UTF-8 locale")
+    chinese_packages = {"fcitx5", "fcitx5-rime", "fcitx5-gtk", "fcitx5-qt", "fcitx5-configtool",
+                        "noto-fonts-cjk", "firefox-i18n-zh-cn", "rime-ice-pinyin-git"}
+    require(chinese_packages <= pkgs, f"缺少中文环境软件包：{', '.join(sorted(chinese_packages - pkgs))}")
+    skel = AIROOT / "etc/skel"
+    require("InputMethod=/usr/share/applications/org.fcitx.Fcitx5.desktop" in read(skel / ".config/kwinrc"),
+            "KWin 必须启动 Fcitx5")
+    require("Hidden=true" in read(skel / ".config/autostart/org.fcitx.Fcitx5.desktop"), "必须避免重复自启动 Fcitx5")
+    require("DefaultIM=rime" in read(skel / ".config/fcitx5/profile"), "默认输入法应为 Rime")
+    require("0=Control+space" in read(skel / ".config/fcitx5/config"), "输入法切换应为 Ctrl+Space")
+    require("__include: rime_ice_suggestion:/" in read(skel / ".local/share/fcitx5/rime/default.custom.yaml"),
+            "Rime 必须加载雾凇推荐配置")
     require("KEYMAP=us" in read(AIROOT / "etc/vconsole.conf"), "键盘配置应为 us")
     print(f"包清单：{len(packages)} 项；静态检查不验证仓库可用性或解析依赖。")
 
@@ -169,10 +204,14 @@ def check_host():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", action="store_true", help="同时检查构建宿主依赖，不要求 root")
+    parser.add_argument("--aur", action="store_true", help="检查预先构建的本地 AUR 包及仓库")
     args = parser.parse_args()
     check_profile()
     if args.host:
         check_host()
+    if args.aur:
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/aur_repo.py"), "check"])
+        require(result.returncode == 0, "本地 AUR 仓库检查失败；请先以普通用户运行 ./build-aur.sh")
     if errors:
         for message in errors:
             print(f"错误：{message}", file=sys.stderr)

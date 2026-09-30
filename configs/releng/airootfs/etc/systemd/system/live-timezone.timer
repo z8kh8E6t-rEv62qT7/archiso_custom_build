@@ -1,0 +1,9 @@
+[Unit]
+Description=Retry Live timezone detection until successful
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=2min
+
+[Install]
+WantedBy=timers.target

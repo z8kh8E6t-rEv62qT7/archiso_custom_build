@@ -1,0 +1,10 @@
+[Unit]
+Description=Detect Live timezone using ipiptimezone
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin
+ExecStart=/usr/local/bin/setup-live-timezone
+TimeoutStartSec=30
+RemainAfterExit=yes

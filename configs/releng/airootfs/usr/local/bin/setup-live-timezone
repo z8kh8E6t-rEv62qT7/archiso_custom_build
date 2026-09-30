@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+detected_tz=$(ipiptimezone)
+# Accept only an exact IANA name known to the installed tzdata.
+zones=$(timedatectl list-timezones)
+if [[ -z "$detected_tz" || "$detected_tz" == *$'\n'* ]] ||
+    ! grep -Fxq -- "$detected_tz" <<< "$zones"; then
+    printf 'Invalid timezone returned by ipiptimezone: %q\n' "$detected_tz" >&2
+    exit 1
+fi
+timedatectl set-timezone "$detected_tz"
+printf 'Live timezone set to %s\n' "$detected_tz"

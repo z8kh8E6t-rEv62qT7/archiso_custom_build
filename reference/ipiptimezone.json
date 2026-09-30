@@ -1,0 +1,18 @@
+{
+  "source": "/mnt/sdc2/ipiplookup/bin",
+  "imported_on": "2026-09-30",
+  "assets": {
+    "ipiptimezone": {
+      "bytes": 138712,
+      "sha256": "d3d8f08683a3bb9c126c5aee0dabddff5759cd9aaf9e7c4b92fadf7d32f3cb64"
+    },
+    "v4.ipdb": {
+      "bytes": 244345575,
+      "sha256": "981c9a772fe06a8b543719668a0d1e59b69af275ffa142070404a272a24006e7"
+    },
+    "v6.ipdb": {
+      "bytes": 24256047,
+      "sha256": "a6d631b584a6a1710b245d86f3369d440041121ff52dcc402fcee6ba7ef3564b"
+    }
+  }
+}

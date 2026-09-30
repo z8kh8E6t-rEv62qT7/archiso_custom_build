@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Initialize Live display preferences
+Exec=/usr/local/bin/setup-live-display
+OnlyShowIn=KDE;
+NoDisplay=true

@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Initialize connected displays once, after the Live user's Wayland session starts."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+
+def main():
+    if os.environ.get("XDG_SESSION_TYPE") != "wayland":
+        return 0
+    state = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+    marker = state / "archiso/display-defaults-v1"
+    if marker.exists():
+        return 0
+    deadline = time.monotonic() + 30
+    error = "No connected displays"
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(["kscreen-doctor", "-j"], check=True,
+                                    capture_output=True, text=True, timeout=5)
+            outputs = json.loads(result.stdout)["outputs"]
+            arguments = []
+            for output in outputs:
+                if not output.get("connected") or not output.get("enabled"):
+                    continue
+                identifier = int(output["id"])
+                arguments.extend((f"output.{identifier}.colorProfileSource.EDID",
+                                  f"output.{identifier}.colorPowerTradeoff.preferAccuracy"))
+            if arguments:
+                subprocess.run(["kscreen-doctor", *arguments], check=True,
+                               capture_output=True, text=True, timeout=5)
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.touch()
+                return 0
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+            error = str(exc)
+        time.sleep(1)
+    print(f"Could not initialize Live display preferences: {error}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -10,6 +10,8 @@ base-devel
 bash-completion
 bcachefs-tools
 bind
+bluez
+bluez-utils
 bolt
 brltty
 btop
@@ -37,8 +39,14 @@ ethtool
 exfatprogs
 f2fs-tools
 fatresize
+fcitx5
+fcitx5-configtool
+fcitx5-gtk
+fcitx5-qt
+fcitx5-rime
 fd
 firefox
+firefox-i18n-zh-cn
 foot-terminfo
 fsarchiver
 ghostty-terminfo
@@ -58,6 +66,7 @@ iw
 iwd
 jfsutils
 jq
+kamoso
 kitty-terminfo
 kmscon-terminfo
 konsole
@@ -65,7 +74,9 @@ ldns
 less
 lftp
 libfido2
+libgcc
 libisoburn
+libstdc++
 libusb-compat
 linux
 linux-atm
@@ -100,6 +111,7 @@ nfs-utils
 nilfs-utils
 nmap
 nodejs
+noto-fonts-cjk
 npm
 ntfs-3g
 ntfsprogs
@@ -128,6 +140,7 @@ qemu-guest-agent
 rclone
 refind
 reflector
+rime-ice-pinyin-git
 ripgrep
 rsync
 rxvt-unicode-terminfo
@@ -146,10 +159,12 @@ systemd-resolvconf
 tcpdump
 terminus-font
 testdisk
+tk
 tmux
 tpm2-tools
 tpm2-tss
 tree
+tzdata
 udftools
 unzip
 usb_modeswitch
@@ -157,6 +172,7 @@ usbmuxd
 usbutils
 vim
 virtualbox-guest-utils-nox
+visual-studio-code-bin
 vpnc
 wget
 wireguard-tools
@@ -169,3 +185,4 @@ xfsprogs
 xl2tpd
 zip
 zsh
+bottom

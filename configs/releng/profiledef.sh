@@ -23,6 +23,10 @@ airootfs_image_tool_options=(
   '--workers=16'
 )
 file_permissions=(
+  ["/usr/local/bin/setup-live-display"]="0:0:755"
+  ["/usr/local/lib/ipiptimezone/ipiptimezone"]="0:0:755"
+  ["/usr/local/bin/setup-live-timezone"]="0:0:755"
+  ["/etc/NetworkManager/dispatcher.d/90-live-timezone"]="0:0:755"
   ["/usr/local/bin/setup-live-user"]="0:0:755"
   ["/etc/sudoers.d/10-liveuser"]="0:0:440"
   ["/etc/shadow"]="0:0:400"
