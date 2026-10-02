@@ -130,6 +130,8 @@ partclone
 parted
 partimage
 pcsclite
+pipewire-audio
+pipewire-pulse
 plasma-meta
 ppp
 pptpclient
@@ -137,6 +139,8 @@ pv
 python
 python-pip
 qemu-guest-agent
+qemu-img
+qemu-tools
 rclone
 refind
 reflector
@@ -178,6 +182,7 @@ wget
 wireguard-tools
 wireless-regdb
 wireless_tools
+wireplumber
 wpa_supplicant
 wvdial
 xdg-utils
@@ -186,3 +191,5 @@ xl2tpd
 zip
 zsh
 bottom
+cmake
+ninja

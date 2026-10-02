@@ -52,6 +52,39 @@ printf '%s\0' "$arch" "$iso_name" "$iso_label" "$install_dir" "$pacman_conf" \
     return result.stdout.split("\0")[:-1] if result.returncode == 0 else []
 
 
+def check_grub_menu(path):
+    config = read(path)
+    label = path.relative_to(PROFILE)
+    require(re.search(r"^default=archlinux$", config, re.M) and
+            re.search(r"^timeout=15$", config, re.M), f"{label} 应默认普通启动并等待 15 秒")
+    # These templates use top-level menuentry blocks; check each kernel/mode pair.
+    entries = re.findall(r"^menuentry [^\n]* --id '([^']+)' \{\n(.*?)^\}", config, re.M | re.S)
+    for kernel, entry_id in (("linux", "archlinux"), ("linux-lts", "archlinux-lts")):
+        for suffix, copy in (("", "n"), ("-copytoram", "y"), ("-accessibility", "n")):
+            bodies = [body for name, body in entries if name == entry_id + suffix]
+            require(len(bodies) == 1, f"{label} 应唯一包含启动项 {entry_id + suffix}")
+            if len(bodies) != 1:
+                continue
+            body = bodies[0]
+            linux = re.findall(r"^\s*linux\s+(.*)$", body, re.M)
+            initrd = re.findall(r"^\s*initrd\s+(.*)$", body, re.M)
+            base = "/%INSTALL_DIR%/boot/%ARCH%/"
+            require(len(linux) == 1 and linux[0].split()[:1] == [base + "vmlinuz-" + kernel] and
+                    initrd == [base + "initramfs-" + kernel + ".img"],
+                    f"{label}:{entry_id + suffix} 必须使用 ISO 中配套的内核和 initramfs")
+            args = linux[0].split()[1:] if len(linux) == 1 else []
+            required_args = {f"copytoram={copy}", "cow_spacesize=4G", "%KERNEL_PARAMS%",
+                             "archisobasedir=%INSTALL_DIR%"}
+            if path.name == "loopback.cfg":
+                required_args |= {'img_dev=UUID=${archiso_img_dev_uuid}', 'img_loop="${iso_path}"'}
+            else:
+                required_args.add("archisosearchuuid=%ARCHISO_UUID%")
+            require(required_args <= set(args) and
+                    [arg for arg in args if arg.startswith("copytoram=")] == [f"copytoram={copy}"] and
+                    ("accessibility=on" in args) == (suffix == "-accessibility"),
+                    f"{label}:{entry_id + suffix} 启动参数不完整或模式不匹配")
+
+
 def check_profile():
     for script in (ROOT / "check.sh", ROOT / "build.sh", ROOT / "build-aur.sh", PROFILE / "profiledef.sh",
                    AIROOT / "usr/local/bin/setup-live-user",
@@ -70,6 +103,22 @@ def check_profile():
     duplicate = sorted(p for p, count in Counter(packages).items() if count > 1)
     require(not duplicate, f"包清单有重复项：{', '.join(duplicate)}")
     pkgs = set(packages)
+    require({"bluez", "bluez-utils", "pipewire-audio", "pipewire-pulse", "wireplumber"} <= pkgs,
+            "蓝牙音频采集需要 BlueZ、PipeWire 音频组件和 WirePlumber")
+    require(target(SYSTEM / "bluetooth.target.wants/bluetooth.service") ==
+            "/usr/lib/systemd/system/bluetooth.service", "蓝牙服务未启用")
+    bluetooth = read(AIROOT / "etc/bluetooth/main.conf")
+    require(all(re.search(pattern, bluetooth, re.M) for pattern in (
+        r"^Name\s*=\s*archlive\s*$", r"^Class\s*=\s*0x000414\s*$",
+        r"^AutoEnable\s*=\s*true\s*$")), "蓝牙必须自动启用并以 archlive 音响类别提供服务")
+    daemon = read(SYSTEM / "bluetooth.service.d/audio-receiver.conf")
+    require("ExecStart=\n" in daemon and
+            "ExecStart=/usr/lib/bluetooth/bluetoothd --noplugin=hostname" in daemon,
+            "应禁用 BlueZ hostname 插件，防止覆盖音响类别")
+    inputs = read(AIROOT / "etc/wireplumber/wireplumber.conf.d/51-bluetooth-input.conf")
+    require('node.name = "~bluez_input.*"' in inputs and
+            'bluez5.media-source-role = "input"' in inputs,
+            "所有手机的蓝牙音频应作为应用输入")
     require({"curl", "libgcc", "libstdc++", "tzdata"} <= pkgs,
             "ipiptimezone 需要 curl、libgcc、libstdc++ 和 tzdata")
     for name in ("ipiptimezone", "v4.ipdb", "v6.ipdb"):
@@ -90,7 +139,7 @@ def check_profile():
         zshrc = AIROOT / "etc/skel/.zshrc"
         require(not zshrc.exists() and not zshrc.is_symlink(),
                 "etc/skel/.zshrc 由 grml-zsh-config 提供，预放入会导致文件冲突；请用 etc/skel/.zshrc.local 定制")
-    required = {"base", "linux", "linux-lts", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux"}
+    required = {"base", "linux", "linux-lts", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux", "grub"}
     require(required <= pkgs, f"缺少本工程启动必需包：{', '.join(sorted(required - pkgs))}")
     values = profile_values()
     require(len(values) == 10, "profiledef.sh 未返回完整配置")
@@ -102,18 +151,22 @@ def check_profile():
         require(bool(re.fullmatch(r"[a-z0-9]{1,30}", install)), "install_dir 格式不合法")
         require(pacman == "pacman.conf" and (PROFILE / pacman).is_file(), "本工程需要 configs/releng/pacman.conf")
         require(fs == "erofs", "本工程构建依赖检查针对 EROFS")
-        require(set(modes.split()) == {"bios.syslinux", "uefi.systemd-boot"}, "应保留 BIOS 和 UEFI 启动模式")
+        require(set(modes.split()) == {"bios.syslinux", "uefi.grub"}, "应使用 BIOS Syslinux 和 UEFI GRUB，共用 ISO 中的启动文件")
         require(builds == "iso", "本工程仅构建 ISO")
         require(user_mode == "0:0:755", "setup-live-user 的 file_permissions 应为 0:0:755")
         require(sudo_mode == "0:0:440", "sudoers 的 file_permissions 应为 0:0:440")
     for path in ("syslinux/syslinux.cfg", "syslinux/archiso_sys-linux.cfg",
-                 "efiboot/loader/loader.conf", "efiboot/loader/entries/01-archiso-linux.conf",
-                 "efiboot/loader/entries/02-archiso-copytoram-linux.conf",
-                 "efiboot/loader/entries/04-archiso-linux-lts.conf",
-                 "efiboot/loader/entries/05-archiso-copytoram-linux-lts.conf",
-                 "efiboot/loader/entries/06-archiso-speech-linux-lts.conf"):
+                 "grub/grub.cfg", "grub/loopback.cfg"):
         require((PROFILE / path).is_file(), f"缺少启动配置：{path}")
+    for path in (PROFILE / "grub/grub.cfg", PROFILE / "grub/loopback.cfg"):
+        check_grub_menu(path)
     init = read(AIROOT / "etc/mkinitcpio.conf.d/archiso.conf")
+    result = subprocess.run(["bash", "-c", 'source "$1"; '
+                             '[[ $MODULES_DECOMPRESS == yes && $COMPRESSION == xz '
+                             '&& ${COMPRESSION_OPTIONS[*]} == -9e ]]',
+                             "bash", str(AIROOT / "etc/mkinitcpio.conf.d/archiso.conf")],
+                            capture_output=True, text=True)
+    require(result.returncode == 0, "initramfs 应启用 MODULES_DECOMPRESS=yes，并使用 XZ -9e 统一压缩驱动和固件")
     require(bool(re.search(r"\barchiso\b", init)) and "filesystems" in init, "initramfs 必须保留 archiso 和 filesystems hooks")
     require(bool(re.search(r"^MODULES=.*\berofs\b", init, re.M)), "EROFS 镜像需要在 initramfs MODULES 中保留 erofs")
     require(all(re.search(rf"^MODULES=.*\b{module}\b", init, re.M)
@@ -138,6 +191,14 @@ def check_profile():
         ordering = read(SYSTEM / "sddm.service.d/live-user.conf")
         require("Requires=setup-live-user.service" in ordering and "After=setup-live-user.service" in ordering,
                 "SDDM 必须依赖并等待用户初始化服务")
+        require(target(SYSTEM / "getty@tty1.service") == "/dev/null", "tty1 应保留给 SDDM，屏蔽其 getty")
+        require(target(SYSTEM / "getty.target.wants/getty@tty2.service") == "/usr/lib/systemd/system/getty@.service",
+                "应启用 tty2 救援终端")
+        console = read(SYSTEM / "getty@tty2.service.d/autologin.conf")
+        require("ExecStart=\n" in console and "--autologin root" in console,
+                "tty2 应保留 root 自动登录")
+        require(not (SYSTEM / "getty@tty1.service.d/autologin.conf").exists(),
+                "root 自动登录应从 tty1 移至 tty2")
     require({"sudo", "zsh"} <= pkgs, "liveuser 初始化需要 sudo 和 zsh")
     setup = read(SYSTEM / "setup-live-user.service")
     require("Before=sddm.service" in setup and "ExecStart=/usr/local/bin/setup-live-user" in setup,
@@ -175,15 +236,34 @@ def check_profile():
     require("__include: rime_ice_suggestion:/" in read(skel / ".local/share/fcitx5/rime/default.custom.yaml"),
             "Rime 必须加载雾凇推荐配置")
     require("KEYMAP=us" in read(AIROOT / "etc/vconsole.conf"), "键盘配置应为 us")
+    require('Option "XkbLayout" "us"' in read(AIROOT / "etc/X11/xorg.conf.d/00-keyboard.conf"),
+            "X11／SDDM 键盘布局应为 us")
+    require("LayoutList=us" in read(skel / ".config/kxkbrc"), "Plasma 键盘布局应为 us")
+    # Include PXE and GRUB templates, not just the default local boot entry.
+    boot_files = [*PROFILE.glob("syslinux/*.cfg"), *PROFILE.glob("grub/*.cfg")]
+    for boot_file in boot_files:
+        for number, line in enumerate(read(boot_file).splitlines(), 1):
+            if re.match(r"\s*(?:APPEND|linux|options)\s", line) and "archisobasedir=" in line:
+                require(line.split().count("cow_spacesize=4G") == 1,
+                        f"{boot_file.relative_to(PROFILE)}:{number} 应设置 cow_spacesize=4G")
     print(f"包清单：{len(packages)} 项；静态检查不验证仓库可用性或解析依赖。")
 
 
 def check_host():
     require(os.uname().machine == "x86_64", "请在 x86_64 Arch Linux 宿主上构建")
     commands = ("mkarchiso", "pacman", "pacman-conf", "pacstrap", "mkinitcpio", "mkfs.erofs", "xorriso",
-                "mkfs.fat", "mcopy", "mmd", "bsdtar", "unshare", "mount", "script", "mktemp")
+                "mkfs.fat", "mcopy", "mmd", "bsdtar", "unshare", "mount", "script", "mktemp",
+                "grub-mkstandalone", "grub-script-check")
     missing = [name for name in commands if shutil.which(name) is None]
     require(not missing, f"缺少构建工具：{', '.join(missing)}。参见 README.md 的宿主准备命令")
+    for asset in ("/usr/lib/grub/x86_64-efi/moddep.lst", "/usr/lib/grub/x86_64-efi/linux.mod",
+                  "/usr/lib/grub/x86_64-efi/iso9660.mod", "/usr/lib/grub/x86_64-efi/search_fs_file.mod",
+                  "/usr/share/grub/sbat.csv"):
+        require(Path(asset).is_file(), f"缺少 UEFI GRUB 构建文件：{asset}；请安装宿主 grub 包")
+    if shutil.which("grub-script-check"):
+        for path in (PROFILE / "grub/grub.cfg", PROFILE / "grub/loopback.cfg"):
+            result = subprocess.run(["grub-script-check", str(path)], capture_output=True, text=True)
+            require(result.returncode == 0, f"GRUB 语法错误：{path.name}：{result.stderr.strip()}")
     if shutil.which("mkfs.erofs"):
         result = subprocess.run(["mkfs.erofs", "--help"], capture_output=True, text=True)
         require(result.returncode == 0 and bool(re.search(r"\blzma\b", result.stdout + result.stderr)),

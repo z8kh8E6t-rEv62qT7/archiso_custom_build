@@ -11,7 +11,7 @@ buildmodes=('iso')
 install_dir="arch"
 kernel_params_x86_64="nvidia_drm.modeset=1"
 bootmodes=('bios.syslinux'
-           'uefi.systemd-boot')
+           'uefi.grub')
 pacman_conf="pacman.conf"
 airootfs_image_type="erofs"
 # Extreme LZMA, 1 MiB physical clusters and packed tails with parallel fragment deduplication.
