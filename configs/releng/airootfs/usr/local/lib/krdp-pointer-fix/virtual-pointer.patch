@@ -1,0 +1,14 @@
+diff --git a/src/screencasting.cpp b/src/screencasting.cpp
+index ea9a4d8..7e1a105 100644
+--- a/src/screencasting.cpp
++++ b/src/screencasting.cpp
+@@ -147,6 +147,9 @@ ScreencastingStream *Screencasting::createRegionStream(QRect g, qreal scale, Scr
+ ScreencastingStream *Screencasting::createVirtualMonitorStream(const QString &name, const QSize &resolution, qreal dpr, Screencasting::CursorMode mode)
+ {
+     auto stream = new ScreencastingStream(this);
++    // Mouse coordinates are mapped from the video size to this logical size.
++    // Leaving QSize invalid maps every position to the top-left corner.
++    stream->d->m_size = resolution / dpr;
+     stream->d->init(d->stream_virtual_output(name, resolution.width(), resolution.height(), wl_fixed_from_double(dpr), mode));
+     return stream;
+ }

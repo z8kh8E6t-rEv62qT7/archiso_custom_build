@@ -2,6 +2,7 @@
 """Offline consistency checks for this editable Archiso profile; no downloads."""
 import argparse
 from collections import Counter
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -281,12 +282,34 @@ def check_host():
             "宿主 mirrorlist 没有启用的 Server；请先配置镜像源")
 
 
+def check_pointer_fix():
+    assets = AIROOT / "usr/local/lib/krdp-pointer-fix"
+    checksums = read(assets / "SHA256SUMS").splitlines()
+    require(len(checksums) == 2, "KRDP 临时修复需要库和补丁的 SHA-256 记录")
+    expected_files = {"libKRdp.so.6", "virtual-pointer.patch"}
+    seen = set()
+    for line in checksums:
+        fields = line.split()
+        if len(fields) != 2 or fields[1] not in expected_files or fields[1] in seen:
+            require(False, "KRDP 临时修复的校验记录无效")
+            continue
+        checksum, name = fields
+        seen.add(name)
+        path = assets / name
+        require(path.is_file() and not path.is_symlink(), f"缺少 KRDP 临时修复文件：{name}")
+        if path.is_file():
+            require(hashlib.sha256(path.read_bytes()).hexdigest() == checksum,
+                    f"KRDP 临时修复校验失败：{name}；请运行 scripts/build-krdp-pointer-fix.sh 重建")
+    require(seen == expected_files, "KRDP 临时修复的校验记录不完整")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", action="store_true", help="同时检查构建宿主依赖，不要求 root")
     parser.add_argument("--aur", action="store_true", help="检查预先构建的本地 AUR 包及仓库")
     args = parser.parse_args()
     check_profile()
+    check_pointer_fix()
     if args.host:
         check_host()
     if args.aur:

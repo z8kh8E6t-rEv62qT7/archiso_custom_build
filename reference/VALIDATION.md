@@ -147,3 +147,25 @@ XZ `-9e`，仅新增 `MODULES_DECOMPRESS="yes"`。使用镜像内的 mkinitcpio 
 - 新增 `configs/releng/airootfs/etc/FreeRDP/FreeRDP/HKLM.reg`，在 `HKEY_LOCAL_MACHINE\Software\FreeRDP\FreeRDP\Server` 中设置 `ExtSecurity=0`，与当前 Live 环境已应用的配置逐字一致。文件权限为 0644，由 Archiso 默认以 root 所有者安装。此项影响使用该默认注册表的 FreeRDP 服务端。
 - 当前 Live 环境重启 KRDP 后，用协议掩码 1、3、11 分别进行协商，均返回 TLS（协议值 1）；三次 TLS 握手均成功，使用 TLS 1.3／TLS_AES_256_GCM_SHA384。系统密码认证保留，实际客户端登录尚待确认。
 - `./check.sh`（190 项包清单）、`git diff --check` 通过。此次未构建或启动新 ISO；用户仍需为新 Live 系统的 `liveuser` 设置密码，并在 KDE 设置中启用系统用户远程登录和服务。
+
+## KRDP 4K 虚拟显示器（2026-10-02）
+
+- 实体显示器关闭后，当前 Live 环境的所有 DRM 接口均为 disconnected，KDE 报告没有显示输出，KRDP 随后无法创建屏幕采集会话；远程桌面服务和桌面会话仍在运行。
+- 新增 `configs/releng/airootfs/etc/systemd/user/app-org.kde.krdpserver.service.d/virtual-monitor.conf`，清空原 ExecStart 后设为 `/usr/bin/krdpserver --plasma --virtual-monitor 3840x2160@1`，与当前 Live 环境已验证的用户服务覆盖配置一致。使用 Plasma 后端创建指定尺寸和缩放的虚拟输出；文件采用 Archiso 默认的 root 所有者、0644 权限。
+- 当前 Live 环境在全部实体输出断开时，通过本地连接及 TLS 1.3 握手触发虚拟屏幕创建；`kscreen-doctor -o` 确认 `Virtual-3840x2160@1` 已连接并启用，模式为 3840×2160@60 Hz、缩放 1。此测试未完成客户端账号登录及画面、输入验证。
+- 此次仅将启动参数写入镜像配置，沿用现有远程桌面启用及密码设置流程；尚未重新构建或启动 ISO。
+
+### 200% 缩放更新（2026-10-02）
+
+- 当前用户服务和镜像服务覆盖配置均更新为 `--plasma --virtual-monitor 3840x2160@2`。当前会话通过 `kscreen-doctor output.Virtual-3840x2160@2.scale.2` 同步更新 KWin 保存的缩放设置。
+- 镜像新增 `/etc/skel/.config/kwinoutputconfig.json`，仅预设虚拟输出名称和 `scale=2`，不包含宿主实体显示器信息。KWin 会优先使用保存的输出配置，不能只依赖 KRDP 的缩放参数。
+- 当前 Live 环境验证输出模式为 3840×2160@60 Hz、Scale 2、逻辑尺寸 1920×1080；TLS 1.3 握手正常。新 ISO 尚未构建或启动验证。
+
+### 鼠标坐标临时修复写入镜像（2026-10-02）
+
+- 镜像新增 `/usr/local/lib/krdp-pointer-fix/libKRdp.so.6`、源码补丁、上游许可证和 SHA-256 记录。`pointer-fix.conf` 仅为 KRDP 用户服务设置私有库搜索路径；`virtual-monitor.conf` 继续使用 3840×2160、200% 缩放。
+- 通过新增的 `scripts/build-krdp-pointer-fix.sh` 从 KDE KRDP v6.7.5 固定提交 `270dcf01851229134f74fa7d90ac338ec788ec67` 重新拉取源码、应用补丁并完整编译 KRdp 库，成功生成镜像内的库。该脚本不安装到宿主；源代码及构建目录保留在其输出的临时目录中。
+- `check-krdp-pointer-fix` 在服务启动前校验已安装的 KRDP 版本。当前 6.7.5 通过；使用模拟的 6.8.0 返回值验证会拒绝启动，并提示重建或移除临时覆盖。此限制避免将旧库注入其他版本的服务端。
+- `check.sh` 新增库和补丁的校验和检查；正常副本通过，在临时副本中追加损坏数据后被正确拒绝。
+- `./build.sh --check`（195 项包清单、宿主依赖、AUR 仓库及修复资产）、Shell 语法检查、`git diff --check` 均通过。以镜像内库运行 `/usr/bin/krdpserver --version` 成功，返回 6.7.5。宿主没有 ShellCheck，未运行 ShellCheck。
+- 本次未构建或启动新 ISO；此前 6.7.5 本地会话测试已验证修复使 4K 视频中心映射到 200% 逻辑桌面的中心。

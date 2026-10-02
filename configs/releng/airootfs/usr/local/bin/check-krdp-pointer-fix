@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The private library was built from KRDP 6.7.5; never inject it into a newer server.
+version=$(pacman -Q krdp)
+case "$version" in
+    'krdp 6.7.5-'*) ;;
+    *)
+        printf 'KRDP 临时鼠标修复仅适用于 6.7.5，当前为 %s。请重建修复，或移除 /etc/systemd/user/app-org.kde.krdpserver.service.d/pointer-fix.conf 后使用发行版库。\n' "$version" >&2
+        exit 1
+        ;;
+esac

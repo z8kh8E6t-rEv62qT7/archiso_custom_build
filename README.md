@@ -35,6 +35,8 @@
 - initramfs 显式包含 `erofs` 内核模块，使用 `MODULES_DECOMPRESS="yes"` 先解压内核模块和固件，再以 XZ `-9e` 统一压缩，减少已压缩文件留在 early CPIO 中造成的体积开销；CPU 微码仍保留在 early CPIO。两套内核及硬件支持均保留，代价是启动早期解压时的内存占用增加。`squashfs-tools` 作为 Live 救援工具保留，不再用于生成根文件系统。
 - KDE Plasma，SDDM 自动登录 `liveuser`，zsh，`liveuser` 免密 sudo。KDE 与 Firefox 默认简体中文，安装 Noto CJK 字体；生成 `zh_CN.UTF-8` 和 `en_US.UTF-8`，不全局设置 `LC_ALL`。
 - KDE 远程桌面认证兼容修复：`/etc/FreeRDP/FreeRDP/HKLM.reg` 将 FreeRDP 服务端的 `ExtSecurity` 设为 `0`，避免 KRDP 系统用户登录误选扩展 NLA／NTLM，保留 TLS 加密和系统密码校验。该配置作用于使用此默认注册表的 FreeRDP 服务端；已在 KRDP 6.7.5／FreeRDP 3.32.1 上验证协议协商。需要远程连接时，先用 `passwd` 为 `liveuser` 设置密码，再在 KDE 远程桌面设置中启用系统用户登录和服务。
+- KDE 远程桌面使用 4K、16:9 虚拟显示器：用户服务覆盖配置以 `krdpserver --plasma --virtual-monitor 3840x2160@2` 启动，在连接时创建 3840×2160、200% 缩放（逻辑尺寸 1920×1080）的虚拟屏幕，实体显示器关闭或拔出后仍可提供画面。当前 Live 环境验证的虚拟输出为 60 Hz；实体屏幕开启时，虚拟屏幕作为额外输出。`/etc/skel/.config/kwinoutputconfig.json` 预设虚拟输出缩放为 2，避免 KWin 将其恢复为 100%；服务仍需按上述步骤启用。
+- KRDP 虚拟屏幕鼠标定位临时修复：在 `/usr/local/lib/krdp-pointer-fix/` 随镜像携带带补丁的 `libKRdp.so.6`，仅远程桌面用户服务通过 `pointer-fix.conf` 加载，系统软件包原库保持原样。补丁初始化虚拟屏幕的逻辑尺寸，修复鼠标跳到角落和点击错位。此库固定基于 KRDP 6.7.5；启动前检查版本，其他版本会拒绝启动并提示重建或移除临时覆盖，避免加载不兼容的库。
 - tty1 保留给 SDDM，屏蔽对应 getty；tty2 启用 root 自动登录救援终端，可通过 `Ctrl+Alt+F2` 切换。控制台、X11／SDDM 和 Plasma 用户模板均显式使用美式键盘布局。
 - 预装 [Kamoso](https://apps.kde.org/kamoso/) 简易摄像头应用，可从应用菜单打开，支持拍照和录像。
 - Fcitx5＋Rime 默认使用雾凇全拼 `rime_ice`，简体输出，`Ctrl+Space` 切换。KWin 在 Wayland 会话中启动输入法，禁用重复的桌面自启动；用户模板提供 Rime 推荐配置和 GTK XWayland 配置，设置 `XMODIFIERS`，不全局强制 GTK/Qt 输入模块。词库随镜像安装，首次登录自动部署，输入时无需联网。
@@ -212,3 +214,19 @@ git@github.com:z8kh8E6t-rEv62qT7/archiso_custom_build.git
 ```bash
 git push origin master
 ```
+
+## 重建或移除 KRDP 临时鼠标修复
+
+镜像已包含编译完成的修复库，普通 ISO 构建无需再编译 KRDP。源码固定为 KDE KRDP `v6.7.5`（提交 `270dcf01851229134f74fa7d90ac338ec788ec67`），补丁、上游许可文本和 SHA-256 记录均位于 `configs/releng/airootfs/usr/local/lib/krdp-pointer-fix/`。对应已推送的修复提交为 [117b6b7](https://invent.kde.org/ldai/krdp/-/commit/117b6b7703725e581c043af71c5b2df2129bc5ab)。
+
+需要重建时，在安装 KRDP 6.7.5 及其开发依赖的 x86_64 Arch 宿主上，以普通用户运行：
+
+```bash
+sudo pacman -S --needed base-devel git cmake ninja extra-cmake-modules plasma-wayland-protocols
+./scripts/build-krdp-pointer-fix.sh
+./check.sh
+```
+
+脚本验证源码提交，应用随附补丁，仅编译 KRdp 库，再更新镜像内库和校验记录。构建目录保留在 `${TMPDIR:-/tmp}/archiso-krdp-pointer-fix-*`；不安装到宿主系统，也不自动构建 ISO。更换 KRDP 版本时需重新审核补丁、源码版本和依赖后重建，不能直接沿用此 6.7.5 库。
+
+上游发行版包含修复后，移除镜像中的 `pointer-fix.conf`、`check-krdp-pointer-fix` 和私有库目录，并同步移除 `profiledef.sh` 权限项、检查器 `check_pointer_fix()` 及本重建脚本。保留 `virtual-monitor.conf` 即可继续使用 4K、200% 虚拟屏幕。

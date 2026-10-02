@@ -23,6 +23,7 @@ airootfs_image_tool_options=(
   '--workers=16'
 )
 file_permissions=(
+  ["/usr/local/bin/check-krdp-pointer-fix"]="0:0:755"
   ["/usr/local/bin/setup-live-display"]="0:0:755"
   ["/usr/local/lib/ipiptimezone/ipiptimezone"]="0:0:755"
   ["/usr/local/bin/setup-live-timezone"]="0:0:755"

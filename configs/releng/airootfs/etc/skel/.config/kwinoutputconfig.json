@@ -1,0 +1,15 @@
+[
+  {
+    "name": "outputs",
+    "data": [
+      {
+        "connectorName": "Virtual-3840x2160@2",
+        "scale": 2
+      }
+    ]
+  },
+  {
+    "name": "setups",
+    "data": []
+  }
+]
