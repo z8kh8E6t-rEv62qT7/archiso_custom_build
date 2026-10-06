@@ -11,8 +11,7 @@ import tarfile
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGES = {"rime-ice-pinyin-git": "https://github.com/iDvel/rime-ice",
-            "visual-studio-code-bin": "https://code.visualstudio.com/"}
+PACKAGES = {"rime-ice-pinyin-git": "https://github.com/iDvel/rime-ice"}
 DATABASE = "custom-aur.db.tar.gz"
 
 
@@ -33,7 +32,7 @@ def validate(repo):
     manifest = json.loads((repo / "manifest.json").read_text())
     records = manifest.get("packages", {})
     if set(records) != set(PACKAGES):
-        raise ValueError("本地仓库必须包含雾凇拼音和 visual-studio-code-bin")
+        raise ValueError("本地仓库必须包含雾凇拼音")
     package_metadata = {}
     for name, record in records.items():
         filename = record["filename"]

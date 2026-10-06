@@ -59,3 +59,6 @@ for iso in "$out_dir"/*.iso; do
         exit 1
     fi
 done
+
+# Keep only the newest cached version of each package after a successful build.
+paccache -r -k 1 -c "$cache_dir"

@@ -56,11 +56,11 @@ printf '%s\0' "$arch" "$iso_name" "$iso_label" "$install_dir" "$pacman_conf" \
 def check_grub_menu(path):
     config = read(path)
     label = path.relative_to(PROFILE)
-    require(re.search(r"^default=archlinux$", config, re.M) and
-            re.search(r"^timeout=15$", config, re.M), f"{label} 应默认普通启动并等待 15 秒")
+    require(re.search(r"^default=archlinux-rt$", config, re.M) and
+            re.search(r"^timeout=15$", config, re.M), f"{label} 应默认 linux-rt 普通启动并等待 15 秒")
     # These templates use top-level menuentry blocks; check each kernel/mode pair.
     entries = re.findall(r"^menuentry [^\n]* --id '([^']+)' \{\n(.*?)^\}", config, re.M | re.S)
-    for kernel, entry_id in (("linux", "archlinux"), ("linux-lts", "archlinux-lts")):
+    for kernel, entry_id in (("linux-rt", "archlinux-rt"), ("linux", "archlinux"), ("linux-lts", "archlinux-lts")):
         for suffix, copy in (("", "n"), ("-copytoram", "y"), ("-accessibility", "n")):
             bodies = [body for name, body in entries if name == entry_id + suffix]
             require(len(bodies) == 1, f"{label} 应唯一包含启动项 {entry_id + suffix}")
@@ -84,6 +84,31 @@ def check_grub_menu(path):
                     [arg for arg in args if arg.startswith("copytoram=")] == [f"copytoram={copy}"] and
                     ("accessibility=on" in args) == (suffix == "-accessibility"),
                     f"{label}:{entry_id + suffix} 启动参数不完整或模式不匹配")
+
+
+def check_syslinux_menu():
+    config = read(PROFILE / "syslinux/archiso_sys.cfg")
+    require(re.search(r"^DEFAULT archrt$", config, re.M) and
+            re.search(r"^TIMEOUT 150$", config, re.M), "BIOS 应默认 linux-rt 普通启动并等待 15 秒")
+    entries = re.split(r"^LABEL ", read(PROFILE / "syslinux/archiso_sys-linux.cfg"), flags=re.M)[1:]
+    for kernel, entry_id in (("linux-rt", "archrt"), ("linux", "arch"), ("linux-lts", "archlts")):
+        for suffix, copy in (("", "n"), ("ram", "y"), ("speech", "n")):
+            bodies = [entry for entry in entries if entry.splitlines()[0] == entry_id + suffix]
+            require(len(bodies) == 1, f"BIOS 应唯一包含启动项 {entry_id + suffix}")
+            if len(bodies) != 1:
+                continue
+            body = bodies[0]
+            base = "/%INSTALL_DIR%/boot/%ARCH%/"
+            require(re.findall(r"^LINUX (.+)$", body, re.M) == [base + "vmlinuz-" + kernel] and
+                    re.findall(r"^INITRD (.+)$", body, re.M) == [base + "initramfs-" + kernel + ".img"],
+                    f"BIOS:{entry_id + suffix} 必须使用配套的内核和 initramfs")
+            append = re.findall(r"^APPEND (.+)$", body, re.M)
+            args = append[0].split() if len(append) == 1 else []
+            require({"archisobasedir=%INSTALL_DIR%", "archisosearchuuid=%ARCHISO_UUID%",
+                     "cow_spacesize=4G", "%KERNEL_PARAMS%"} <= set(args) and
+                    [arg for arg in args if arg.startswith("copytoram=")] == [f"copytoram={copy}"] and
+                    ("accessibility=on" in args) == (suffix == "speech"),
+                    f"BIOS:{entry_id + suffix} 启动参数不完整或模式不匹配")
 
 
 def check_profile():
@@ -140,7 +165,7 @@ def check_profile():
         zshrc = AIROOT / "etc/skel/.zshrc"
         require(not zshrc.exists() and not zshrc.is_symlink(),
                 "etc/skel/.zshrc 由 grml-zsh-config 提供，预放入会导致文件冲突；请用 etc/skel/.zshrc.local 定制")
-    required = {"base", "linux", "linux-lts", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux", "grub"}
+    required = {"base", "linux", "linux-lts", "linux-rt", "linux-firmware", "mkinitcpio", "mkinitcpio-archiso", "syslinux", "grub"}
     require(required <= pkgs, f"缺少本工程启动必需包：{', '.join(sorted(required - pkgs))}")
     values = profile_values()
     require(len(values) == 10, "profiledef.sh 未返回完整配置")
@@ -161,6 +186,7 @@ def check_profile():
         require((PROFILE / path).is_file(), f"缺少启动配置：{path}")
     for path in (PROFILE / "grub/grub.cfg", PROFILE / "grub/loopback.cfg"):
         check_grub_menu(path)
+    check_syslinux_menu()
     init = read(AIROOT / "etc/mkinitcpio.conf.d/archiso.conf")
     result = subprocess.run(["bash", "-c", 'source "$1"; '
                              '[[ $MODULES_DECOMPRESS == yes && $COMPRESSION == xz '
@@ -174,13 +200,16 @@ def check_profile():
                 for module in ("thunderbolt", "thunderbolt_net")),
             "雷电支持需要在 initramfs MODULES 中保留 thunderbolt 和 thunderbolt_net")
     require("bolt" in pkgs, "雷电设备授权需要 bolt")
-    nvidia = {"nvidia-open", "nvidia-open-lts", "nvidia-utils"}
+    nvidia = {"nvidia-open-dkms", "nvidia-utils"}
     has_modules = bool(re.search(r"^MODULES=.*\bnvidia\b", init, re.M))
     has_nvidia_params = "nvidia_drm.modeset=1" in read(PROFILE / "profiledef.sh")
-    require(not (pkgs & nvidia) or nvidia <= pkgs, "双内核 NVIDIA 配置需要同时包含 nvidia-open、nvidia-open-lts 和 nvidia-utils")
+    require(not (pkgs & nvidia) or nvidia <= pkgs, "三内核 NVIDIA 配置需要同时包含 nvidia-open-dkms 和 nvidia-utils")
+    require(not (pkgs & {"nvidia-open", "nvidia-open-lts"}), "NVIDIA 预编译包与 DKMS 驱动冲突，应使用 nvidia-open-dkms")
     require(has_modules == (nvidia <= pkgs), "NVIDIA 包与 MODULES 不一致：删除驱动时同步移除 NVIDIA MODULES 和启动参数")
     require(has_nvidia_params == (nvidia <= pkgs), "NVIDIA 启动参数与包清单不一致")
     if nvidia <= pkgs:
+        require({"base-devel", "linux-headers", "linux-lts-headers", "linux-rt-headers"} <= pkgs,
+                "NVIDIA DKMS 需要编译工具和三个内核各自的 headers")
         require(all(module in init for module in ("nvidia_modeset", "nvidia_uvm", "nvidia_drm")), "NVIDIA initramfs 模块不完整")
     desktop = {"plasma-meta", "sddm"}
     if pkgs & desktop or (SYSTEM / "display-manager.service").is_symlink():

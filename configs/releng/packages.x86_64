@@ -82,7 +82,11 @@ linux
 linux-atm
 linux-firmware
 linux-firmware-marvell
+linux-headers
 linux-lts
+linux-lts-headers
+linux-rt
+linux-rt-headers
 livecd-sounds
 lm_sensors
 lsof
@@ -115,8 +119,7 @@ noto-fonts-cjk
 npm
 ntfs-3g
 ntfsprogs
-nvidia-open
-nvidia-open-lts
+nvidia-open-dkms
 nvidia-utils
 nvme-cli
 open-iscsi
@@ -176,7 +179,6 @@ usbmuxd
 usbutils
 vim
 virtualbox-guest-utils-nox
-visual-studio-code-bin
 vpnc
 wget
 wireguard-tools
@@ -193,3 +195,4 @@ zsh
 bottom
 cmake
 ninja
+pacman-contrib

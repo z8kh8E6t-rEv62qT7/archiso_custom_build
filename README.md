@@ -1,7 +1,7 @@
 # 自定义 Arch Linux Live ISO
 
 基于官方 Git 历史的可编辑 Archiso 工程，参照当前 `archlinux-kde-nvidia` Live 环境。
-当前固定使用 **EROFS + LZMA extreme 109、片段去重、16 线程压缩**，initramfs 将模块和固件解压后统一以 XZ `-9e` 压缩。**当前配置已切换到 BIOS Syslinux + UEFI GRUB，共用 ISO 中的内核和 initramfs；这次引导切换尚未构建或启动验证。** 双内核和现有软件均保留。
+当前固定使用 **EROFS + LZMA extreme 109、片段去重、16 线程压缩**，initramfs 将模块和固件解压后统一以 XZ `-9e` 压缩。**当前配置已切换到 BIOS Syslinux + UEFI GRUB，共用 ISO 中的内核和 initramfs；这次引导切换尚未构建或启动验证。** 已加入 `linux-rt` 并设为默认，保留 `linux`、`linux-lts` 和现有软件；RT 与 DKMS 配置尚未构建或启动验证。
 
 最近一次成功构建仍使用切换前的 UEFI systemd-boot：2026-09-30 UTC 的 ISO 为 **4,578,738,176 字节（4366.625 MiB）**，比 initramfs 优化前减少 179.41 MiB（3.95%），距当前 DVD 容量尚余 116 MiB。旧产物位于 `out/build-20260930T055617Z-qMJUh1/archlinux-custom-2026.09.29-x86_64.iso`，同目录保留构建日志及 SHA-256 文件；该体积不代表 GRUB 方案，测试过程见 `reference/VALIDATION.md`。
 
@@ -9,7 +9,7 @@
 
 | 路径 | 用途 |
 | --- | --- |
-| `configs/releng/packages.x86_64` | 唯一安装包清单（含 VS Code、tk 和 Kamoso），实际项数由 `check.sh` 输出 |
+| `configs/releng/packages.x86_64` | 唯一安装包清单（含 tk 和 Kamoso），实际项数由 `check.sh` 输出 |
 | `configs/releng/profiledef.sh` | 名称、日期版本、架构、启动模式、压缩和文件权限 |
 | `configs/releng/airootfs/` | 映射到新镜像根目录的文件覆盖 |
 | `configs/releng/pacman.conf` | 构建镜像时使用的官方 core、extra 仓库配置 |
@@ -27,12 +27,12 @@
 
 ## 当前行为
 
-- x86_64、`linux` 与 `linux-lts` 双内核、BIOS Syslinux 与 UEFI GRUB 启动，根文件系统使用 EROFS + LZMA。
-- 使用 Archiso 原生 `uefi.grub` 模式：EFI FAT 分区保存 GRUB 引导程序和 UEFI Shell；GRUB 定位 ISO 卷后读取 `/arch/boot/x86_64/` 中与 BIOS 共用的内核和 initramfs，不再把这四个大文件复制到 EFI 分区。按上一版产物估算有望进一步减少约 550–570 MiB，实际以重新构建结果为准。
-- BIOS、UEFI 及 GRUB loopback 菜单明确提供 `Normal`（普通启动，`copytoram=n`）和 `Copy to RAM`（复制到内存，`copytoram=y`）两个入口，两套内核各自提供普通、Copy to RAM 和语音辅助启动项。默认使用 `linux` 普通启动，15 秒后自动进入；语音辅助入口也使用普通模式。普通模式需保持启动介质连接，复制到内存模式需额外内存存放压缩根文件系统。菜单修改需重新构建 ISO 才能生效。
+- x86_64、`linux-rt`、`linux` 与 `linux-lts` 三内核、BIOS Syslinux 与 UEFI GRUB 启动，根文件系统使用 EROFS + LZMA。
+- 使用 Archiso 原生 `uefi.grub` 模式：EFI FAT 分区保存 GRUB 引导程序和 UEFI Shell；GRUB 定位 ISO 卷后读取 `/arch/boot/x86_64/` 中与 BIOS 共用的内核和 initramfs，不再把这些启动文件复制到 EFI 分区。新增 RT 内核、headers 和 DKMS 后的体积以重新构建结果为准。
+- BIOS、UEFI 及 GRUB loopback 菜单明确提供 `Normal`（普通启动，`copytoram=n`）和 `Copy to RAM`（复制到内存，`copytoram=y`）两个入口，三套内核各自提供普通、Copy to RAM 和语音辅助启动项。默认使用 `linux-rt` 普通启动，15 秒后自动进入；语音辅助入口也使用普通模式。普通模式需保持启动介质连接，复制到内存模式需额外内存存放压缩根文件系统。菜单修改需重新构建 ISO 才能生效。
 - 所有 Live 启动入口设置 `cow_spacesize=4G`，将内存可写层上限设为 4 GiB，按实际写入占用内存；Copy to RAM 存放压缩根文件系统所用内存另计。
 - 根文件系统采用 LZMA extreme 级别 109、1 MiB 物理压缩簇、文件尾部打包，以及 `fragdedupe=inode` 片段去重，使用 `--workers=16` 并行压缩。片段去重在文件数据完全相同时复用其 fragment 数据；不启用会让 erofs-utils 1.9.4 退回串行的全局 `dedupe`。
-- initramfs 显式包含 `erofs` 内核模块，使用 `MODULES_DECOMPRESS="yes"` 先解压内核模块和固件，再以 XZ `-9e` 统一压缩，减少已压缩文件留在 early CPIO 中造成的体积开销；CPU 微码仍保留在 early CPIO。两套内核及硬件支持均保留，代价是启动早期解压时的内存占用增加。`squashfs-tools` 作为 Live 救援工具保留，不再用于生成根文件系统。
+- initramfs 显式包含 `erofs` 内核模块，使用 `MODULES_DECOMPRESS="yes"` 先解压内核模块和固件，再以 XZ `-9e` 统一压缩，减少已压缩文件留在 early CPIO 中造成的体积开销；CPU 微码仍保留在 early CPIO。三套内核及硬件支持均保留，代价是启动早期解压时的内存占用增加。`squashfs-tools` 作为 Live 救援工具保留，不再用于生成根文件系统。
 - KDE Plasma，SDDM 自动登录 `liveuser`，zsh，`liveuser` 免密 sudo。KDE 与 Firefox 默认简体中文，安装 Noto CJK 字体；生成 `zh_CN.UTF-8` 和 `en_US.UTF-8`，不全局设置 `LC_ALL`。
 - KDE 远程桌面认证兼容修复：`/etc/FreeRDP/FreeRDP/HKLM.reg` 将 FreeRDP 服务端的 `ExtSecurity` 设为 `0`，避免 KRDP 系统用户登录误选扩展 NLA／NTLM，保留 TLS 加密和系统密码校验。该配置作用于使用此默认注册表的 FreeRDP 服务端；已在 KRDP 6.7.5／FreeRDP 3.32.1 上验证协议协商。需要远程连接时，先用 `passwd` 为 `liveuser` 设置密码，再在 KDE 远程桌面设置中启用系统用户登录和服务。
 - KDE 远程桌面使用 4K、16:9 虚拟显示器：用户服务覆盖配置以 `krdpserver --plasma --virtual-monitor 3840x2160@2` 启动，在连接时创建 3840×2160、200% 缩放（逻辑尺寸 1920×1080）的虚拟屏幕，实体显示器关闭或拔出后仍可提供画面。当前 Live 环境验证的虚拟输出为 60 Hz；实体屏幕开启时，虚拟屏幕作为额外输出。`/etc/skel/.config/kwinoutputconfig.json` 预设虚拟输出缩放为 2，避免 KWin 将其恢复为 100%；服务仍需按上述步骤启用。
@@ -47,8 +47,8 @@
 - `live-timezone.service` 在 NetworkManager 连接成功或连通性变为 FULL 时异步触发；定时器开机 30 秒后补充检测，失败后每两分钟重试，每次最多 30 秒，不阻塞桌面启动。仅接受本机 tzdata 中有效的时区名，失败保留当前时区；成功后服务保持 active，本次启动不再自动改动，允许用户继续手动调整。
 - NetworkManager 使用 wpa_supplicant 管理 Wi-Fi，通过 systemd-resolved 解析 DNS。屏蔽 systemd-networkd 及其 socket，取消模板的 iwd 自启动。
 - 默认启用 `bluetooth.service`，显式安装 `bluez`、`bluez-utils`、`pipewire-audio`、`pipewire-pulse` 和 `wireplumber`。蓝牙名称为 `archlive`，设备类别固定为音响；所有手机传来的蓝牙音乐默认作为应用输入，供 AirPlayQt 等程序采集，详见下方“蓝牙音频采集”。
-- 雷电（Thunderbolt）／USB4：两套内核的 initramfs 显式加入 `thunderbolt` 和 `thunderbolt_net`，提供控制器和雷电网络驱动；已有 `bolt` 软件包通过其 udev 规则在发现雷电设备时启动授权服务。可用 `boltctl list` 查看设备，`boltctl enroll <UUID>` 授权并登记设备；Live 环境的登记信息不跨重启保留。需要授权的设备遵循原有授权流程，详见 [Linux 内核文档](https://docs.kernel.org/admin-guide/thunderbolt.html)。
-- `nvidia-open`、`nvidia-open-lts`、`nvidia-utils` 与 NVIDIA initramfs 模块、DRM modeset 参数保持配套。
+- 雷电（Thunderbolt）／USB4：三套内核的 initramfs 显式加入 `thunderbolt` 和 `thunderbolt_net`，提供控制器和雷电网络驱动；已有 `bolt` 软件包通过其 udev 规则在发现雷电设备时启动授权服务。可用 `boltctl list` 查看设备，`boltctl enroll <UUID>` 授权并登记设备；Live 环境的登记信息不跨重启保留。需要授权的设备遵循原有授权流程，详见 [Linux 内核文档](https://docs.kernel.org/admin-guide/thunderbolt.html)。
+- 使用 `nvidia-open-dkms`、`nvidia-utils` 及三个内核各自的 headers，在构建镜像时为三套内核编译 NVIDIA 模块；保留 NVIDIA initramfs 模块和 DRM modeset 参数。DKMS 替代原有 `nvidia-open`、`nvidia-open-lts` 预编译包，编译工具由已有的 `base-devel` 提供。Arch [官方包配置](https://gitlab.archlinux.org/archlinux/packaging/packages/nvidia-utils/-/blob/main/PKGBUILD) 已设置 `IGNORE_PREEMPT_RT_PRESENCE=1`；这只跳过上游 RT 检查，不保证运行稳定性或实时延迟，需在目标 NVIDIA 硬件上验证。开源模块适用于 Turing 及更新显卡，见 [NVIDIA 支持说明](https://github.com/NVIDIA/open-gpu-kernel-modules#compatible-gpus)。
 - 保留 releng 安装／救援工具及服务，包括 SSH、cloud-init 和虚拟机来宾服务；这仍是临时 Live 环境。
 
 zsh 默认配置由 `grml-zsh-config` 软件包提供，与原镜像一致；工程移植了美式 KDE 键盘配置，没有复制当前 `/home/liveuser`、账号令牌、Wi-Fi 连接或运行时状态。原有 `/mnt/sdc2/install.sh` 不参与本工程。
@@ -84,7 +84,7 @@ discoverable on
 
 直接修改 `configs/releng/packages.x86_64`：每行一个包名（官方仓库及预先准备的 AUR 包），可用空行和以 `#` 开头的整行注释，不使用行尾注释。分组只是便于阅读，不影响安装顺序。
 
-初始 144 项清单来自当时的 `pacman -Qqe`，其中 `gparted` 是相对原始镜像新增的显式安装包。迁移时保留了旧工程后续新增的 `openai-codex`，当时共 145 项；后续加入中文桌面、输入法、时区依赖、VS Code、tk 和 Kamoso 等软件包，当前项数以 `check.sh` 输出为准。两个环境的原始包版本及显式包列表位于 `reference/`；它们用于对照，**不参与构建，也不锁定版本**。实际安装版本取决于构建当时的仓库。
+初始 144 项清单来自当时的 `pacman -Qqe`，其中 `gparted` 是相对原始镜像新增的显式安装包。迁移时保留了旧工程后续新增的 `openai-codex`，当时共 145 项；后续加入中文桌面、输入法、时区依赖、tk 和 Kamoso 等软件包，当前项数以 `check.sh` 输出为准。两个环境的原始包版本及显式包列表位于 `reference/`；它们用于对照，**不参与构建，也不锁定版本**。实际安装版本取决于构建当时的仓库。
 
 `plasma-meta` 等元包会引入依赖；删除某个包名后，它仍可能因其他包依赖而被安装。若要精简 Plasma 的组件，需要将元包替换为选定的具体组件，同时调整检查器的桌面规则。不要把全部已安装依赖再次粘贴进清单。
 
@@ -95,7 +95,7 @@ discoverable on
 - 更换内核：同步修改引导菜单、initramfs 和驱动包，并更新检查器的 Linux 内核约束。
 - 删除由模板启动菜单或 systemd 单元引用的工具：同步调整对应菜单／服务。静态检查不覆盖所有包的服务依赖。
 
-AUR 目前集成 `rime-ice-pinyin-git` 和 `visual-studio-code-bin`，通过下面的独立准备流程生成本地仓库；不在 Live 系统安装 AUR 助手。`tk` 通过官方仓库安装。新增 AUR 包需同时扩展 `build-aur.sh` 的构建列表和 `scripts/aur_repo.py` 的校验列表。持久化存储和额外安装器尚未配置，已有 `archinstall` 保留。
+AUR 目前集成 `rime-ice-pinyin-git`，通过下面的独立准备流程生成本地仓库；不在 Live 系统安装 AUR 助手。`tk` 通过官方仓库安装。新增 AUR 包需同时扩展 `build-aur.sh` 的构建列表和 `scripts/aur_repo.py` 的校验列表。持久化存储和额外安装器尚未配置，已有 `archinstall` 保留。
 
 ## 添加文件和修改镜像名称
 
@@ -134,7 +134,7 @@ cd /mnt/sdc2/archiso
 ./check.sh
 ```
 
-该命令检查 Shell 语法、包名格式和重复项、启动必需包、主要服务和驱动配置、特殊文件权限声明，并检查 GRUB 主菜单和 loopback 菜单中两套内核各自的普通、Copy to RAM 和语音辅助入口及对应启动参数。它会在独立 Bash 进程中加载 `profiledef.sh`；与 mkarchiso 一样，该文件属于可信的可执行配置。
+该命令检查 Shell 语法、包名格式和重复项、启动必需包、主要服务和驱动配置、特殊文件权限声明，并检查 BIOS Syslinux、GRUB 主菜单和 loopback 菜单的 RT 默认项，以及三套内核各自的普通、Copy to RAM 和语音辅助入口及对应启动参数。它会在独立 Bash 进程中加载 `profiledef.sh`；与 mkarchiso 一样，该文件属于可信的可执行配置。
 静态检查不会查询在线仓库或验证包依赖能否解析，也不能证明镜像能启动。
 
 本地仓库校验的失败场景可用 `python scripts/test_aur_repo.py` 测试：覆盖包缺失、损坏、错误包名／架构、索引不一致，以及发布失败保留旧仓库。这些测试不安装软件包、不修改宿主 pacman 配置。
@@ -150,12 +150,12 @@ EROFS 构建需要宿主的 `mkfs.erofs` 支持 LZMA；`./build.sh --check` 会�
 UEFI GRUB 构建需要宿主 `grub` 包提供的 `grub-mkstandalone`、x86_64 EFI 模块和 SBAT 文件；仅在 Live 包清单中包含 `grub` 不能代替宿主依赖。`./build.sh --check` 同时检查这些文件，并用 `grub-script-check` 检查两个 GRUB 菜单的语法，不生成引导程序或 ISO。
 
 ```bash
-./build-aur.sh      # 普通用户：构建雾凇和 VS Code AUR 包；不要加 sudo
+./build-aur.sh      # 普通用户：构建雾凇 AUR 包；不要加 sudo
 ./build.sh --check  # 离线检查配置、宿主和必需的本地 AUR 包
 sudo ./build.sh     # 安装官方包及本地 AUR 包，构建 ISO
 ```
 
-`build-aur.sh` 每次显式运行都会获取两个包当时的 AUR 配方、雾凇上游源码和 VS Code 官方二进制，以普通用户执行 `makepkg --syncdeps`；缺少的官方构建依赖由 makepkg 通过 sudo 安装。此脚本不修改宿主语言、不安装输入法前端或构建出的 AUR 包。源码、产物和日志保存在 Git 忽略的 `localrepo/build-*` 中。两个包全部成功后，分别记录 AUR 提交、包版本、SHA-256，以及雾凇上游提交，并原子切换 `localrepo/current`；失败保留上一份可用仓库。已开始的 ISO 构建固定使用选定的仓库目录，不受后续切换影响。
+`build-aur.sh` 每次显式运行都会获取雾凇拼音当时的 AUR 配方和上游源码，以普通用户执行 `makepkg --syncdeps`；缺少的官方构建依赖由 makepkg 通过 sudo 安装。此脚本不修改宿主语言、不安装输入法前端或构建出的 AUR 包。源码、产物和日志保存在 Git 忽略的 `localrepo/build-*` 中。包构建成功后，记录 AUR 提交、包版本、SHA-256，以及雾凇上游提交，并原子切换 `localrepo/current`；失败保留上一份可用仓库。已开始的 ISO 构建固定使用选定的仓库目录，不受后续切换影响。
 
 `build.sh` 不调用 `build-aur.sh`，也不获取 AUR 源码。它在创建构建目录前校验目标包、架构、校验和及仓库索引；包缺失、损坏或索引不匹配会直接退出，提示运行 `./build-aur.sh`。`./check.sh` 仍可只做静态配置检查，`./check.sh --host --aur` 包含构建前全部检查。
 
@@ -173,7 +173,7 @@ sudo ./build.sh     # 安装官方包及本地 AUR 包，构建 ISO
 ## 后续启动验收
 
 包清单确定并成功构建后，再分别验证 BIOS、UEFI 启动，KDE 自动登录、终端 sudo、DNS、有线网络与 Wi-Fi。
-切换 UEFI GRUB 后，应分别验证两套内核的普通／Copy to RAM 入口，并覆盖 U 盘直写、光盘和 Ventoy 启动。构建后还应检查 EFI FAT 分区不再含内核／initramfs，而 ISO 的 `/arch/boot/x86_64/` 中仍包含完整的两套启动文件。
+切换 UEFI GRUB 后，应分别验证三套内核的普通／Copy to RAM 入口，并覆盖 U 盘直写、光盘和 Ventoy 启动。构建后还应检查 EFI FAT 分区不再含内核／initramfs，而 ISO 的 `/arch/boot/x86_64/` 中仍包含完整的三套启动文件。
 QEMU 普通显示设备测试不能代替实体 NVIDIA 显卡测试；还需在目标硬件确认驱动和 Plasma 会话。当前通过 Ventoy 启动原镜像的事实不代表新镜像已验证兼容，Ventoy 也留待实机测试。
 
 

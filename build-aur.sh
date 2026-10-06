@@ -3,7 +3,7 @@ set -euo pipefail
 umask 022
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
-    printf '用法：%s\n以普通用户构建雾凇拼音和 VS Code 并发布本地仓库；makepkg --syncdeps 可能通过 sudo 安装官方构建依赖。\n' "$0"
+    printf '用法：%s\n以普通用户构建雾凇拼音并发布本地仓库；makepkg --syncdeps 可能通过 sudo 安装官方构建依赖。\n' "$0"
     exit 0
 fi
 [[ $# == 0 ]] || { printf '不支持参数，请使用 --help。\n' >&2; exit 2; }
@@ -25,7 +25,7 @@ exec > >(tee "$run_dir/build.log") 2>&1
 printf 'AUR 构建目录：%s\n' "$run_dir"
 mkdir -- "$run_dir/repo"
 publish_args=()
-for name in rime-ice-pinyin-git visual-studio-code-bin; do
+for name in rime-ice-pinyin-git; do
     package_dir="$run_dir/$name"
     mkdir -- "$package_dir"
     git clone -- "https://aur.archlinux.org/$name.git" "$package_dir/aur"
@@ -35,7 +35,7 @@ for name in rime-ice-pinyin-git visual-studio-code-bin; do
     mkdir -- "$package_dir/packages" "$package_dir/sources" "$package_dir/logs" "$package_dir/work"
     export PKGDEST="$package_dir/packages" SRCDEST="$package_dir/sources"
     export SRCPKGDEST="$package_dir/packages" LOGDEST="$package_dir/logs" BUILDDIR="$package_dir/work"
-    makepkg --syncdeps --cleanbuild --log
+    bash "$project_dir/scripts/aur-makepkg.sh"
     packages=()
     while IFS= read -r package; do
         # makepkg can list a hypothetical debug package even when none was produced.

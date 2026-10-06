@@ -83,10 +83,10 @@ class RepositoryTests(unittest.TestCase):
     def test_mismatched_database(self):
         self.write_archive(self.repo / aur_repo.DATABASE,
                            {"package/desc": "%NAME%\nunrelated\n\n",
-                            "other/desc": "%NAME%\nvisual-studio-code-bin\n\n"})
+                            "other/desc": "%NAME%\nunrelated\n\n"})
         self.manifest["database_sha256"] = aur_repo.digest(self.repo / aur_repo.DATABASE)
         self.save_manifest()
-        with self.assertRaisesRegex(ValueError, "不一致"):
+        with self.assertRaisesRegex(ValueError, "不一致|只包含"):
             aur_repo.validate(self.repo)
 
     def test_publish_failure_preserves_current(self):
@@ -111,14 +111,8 @@ class RepositoryTests(unittest.TestCase):
         return [(record["filename"], "aur-test", "upstream-test" if name == self.name else "")
                 for name, record in self.manifest["packages"].items()]
 
-    def test_missing_vscode(self):
-        filename = self.manifest["packages"]["visual-studio-code-bin"]["filename"]
-        (self.repo / filename).unlink()
-        with self.assertRaises(OSError):
-            aur_repo.validate(self.repo)
-
     def test_incomplete_manifest(self):
-        del self.manifest["packages"]["visual-studio-code-bin"]
+        del self.manifest["packages"][self.name]
         self.save_manifest()
         with self.assertRaisesRegex(ValueError, "必须包含"):
             aur_repo.validate(self.repo)
@@ -130,7 +124,7 @@ class RepositoryTests(unittest.TestCase):
                            {"package/desc": description, "duplicate/desc": description})
         self.manifest["database_sha256"] = aur_repo.digest(self.repo / aur_repo.DATABASE)
         self.save_manifest()
-        with self.assertRaisesRegex(ValueError, "不一致"):
+        with self.assertRaisesRegex(ValueError, "不一致|只包含"):
             aur_repo.validate(self.repo)
 
 
